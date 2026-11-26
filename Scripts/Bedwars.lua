@@ -367,7 +367,9 @@ local function update(info, hrp)
     end
     if t.key == "player" and opts.showEquipped then lines[#lines + 1] = "Holding: " .. getEquippedItem(info.obj) end
 
-    info.text.Position = Vector2.new(screen.X, topY - 16 - (#lines - 1) * 18)
+    -- with an icon the label sits underneath it, otherwise above the box
+    local textY = (t.isDrop and info.img and t.icon) and (topY + opts.iconSize + 6) or (topY - 16 - (#lines - 1) * 18)
+    info.text.Position = Vector2.new(screen.X, textY)
     info.text.Color = t.color
     info.text.Text = table.concat(lines, "\n")
     info.text.Visible = #lines > 0
@@ -386,12 +388,13 @@ UI.AddTab("Bedwars", function(tab)
             end
             saveConfig()
         end)
+        -- item drops only get their ESP toggle
+        if t.isDrop then return end
         sec:ColorPicker(key .. "_col", t.color.R, t.color.G, t.color.B, 1, function(color)
             t.color = color
             saveConfig()
         end)
-        -- item drops are always icons, so they get no icon / box toggles
-        if t.image and not t.isDrop then
+        if t.image then
             sec:Toggle(key .. "_icon", t.title .. " Icon", t.icon, function(state)
                 t.icon = state
                 saveConfig()
@@ -401,12 +404,10 @@ UI.AddTab("Bedwars", function(tab)
             t.name = state
             saveConfig()
         end)
-        if not t.isDrop then
-            sec:Toggle(key .. "_box", t.title .. " Box", t.box, function(state)
-                t.box = state
-                saveConfig()
-            end)
-        end
+        sec:Toggle(key .. "_box", t.title .. " Box", t.box, function(state)
+            t.box = state
+            saveConfig()
+        end)
         sec:Toggle(key .. "_dist", t.title .. " Distance", t.distance, function(state)
             t.distance = state
             saveConfig()
@@ -481,10 +482,6 @@ UI.AddTab("Bedwars", function(tab)
 
     sec:SliderInt("bw_distance", "Max Distance", 50, 2000, opts.distance, function(val)
         opts.distance = val
-        saveConfig()
-    end)
-    sec:SliderInt("bw_icon_size", "Icon Size", 20, 100, opts.iconSize, function(val)
-        opts.iconSize = val
         saveConfig()
     end)
 
