@@ -1,6 +1,6 @@
 local HttpService = game:GetService("HttpService")
 
-local API_BASE = "https://api.github.com/repos/rconsoIe2/MatchaLuauVM/contents"
+local API_BASE = "https://api.github.com/repos/MinhalTheGoat/Matcha-Script/contents"
 
 local function httpGet(url)
     return pcall(function()

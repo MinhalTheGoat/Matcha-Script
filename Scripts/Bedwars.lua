@@ -4,7 +4,7 @@ if not _G.loadedFromMain then
         if _G.developer then
             mainSource = readfile("rise/main.lua")
         else
-            mainSource = game:HttpGet("https://raw.githubusercontent.com/rconsoIe2/MatchaLuauVM/refs/heads/main/main.lua")
+            mainSource = game:HttpGet("https://raw.githubusercontent.com/MinhalTheGoat/Matcha-Script/refs/heads/main/main.lua")
         end
     end)
 
@@ -17,74 +17,179 @@ if not _G.loadedFromMain then
     return
 end
 
-local LibSource
-if _G.developer then
-    LibSource = readfile("rise/libraries/JDUI.lua")
-else
-    LibSource = game:HttpGet("https://raw.githubusercontent.com/rconsoIe2/MatchaLuauVM/refs/heads/main/Libraries/JDUI.lua")
-end
-local Lib = loadstring(LibSource)() or JDUI
-Lib:SetTitle("Rise")
-Lib:SetSubtitle("Bedwars")
 local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
 
-local settings = {
-    Player = false,
-    Bed = false,
-    Entity = false,
-    ShowKit = false,
-    ShowEquipped = false,
-    Metal = false,
-    Bee = false,
-    Eldertree = false,
-    Star = false,
-    AlchemyCrystal = false,
-    iron = false,
-    diamond = false,
-    emerald = false,
-    Visible = false,
-    Amount = false,
-    Distance = 500,
-    EspSize = 50,
-    TargetEntities = true,
-    TeamCheck = true,
-    SwingRange = 28,
-    AngleValue = 360,
-    RequireMouseDown = false,
-    NoSwing = false,
-    FaceTarget = false,
-    LimitToItems = false,
-    SwingOnly = false,
-    WallCheck = false,
-    AutoKit = false,
-    AutoKitRange = 18,
-    AutoVoidDrop = false,
-    OwlCheck = true,
-    Fishing = false,
-    Instant = false,
-    FishingRemote = false
+local REPO = "https://raw.githubusercontent.com/MinhalTheGoat/Matcha-Script/main"
+
+local function removeInfo(info)
+    for _, d in ipairs(info.drawings) do d:Remove() end
+end
+
+if _G.bw_executed then
+    if _G.bw_heartbeat then _G.bw_heartbeat:Disconnect() end
+    for _, info in pairs(_G.bw_tracks or {}) do removeInfo(info) end
+end
+_G.bw_executed = true
+
+local tracks = {} ; _G.bw_tracks = tracks
+
+-- // TYPES
+
+local function isDrop(name)
+    return function(obj)
+        return obj:IsA("BasePart") and obj.Name == name and obj.Parent ~= nil and obj.Parent.Name == "ItemDrops"
+    end
+end
+
+local function isCharacter(obj)
+    return obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") and obj:FindFirstChild("Humanoid") ~= nil
+end
+
+local function typeConfig(o)
+    return {
+        key = o.key, title = o.title, color = o.color,
+        validate = o.validate, target = o.target,
+        label = o.label or o.title,
+        image = o.image,
+        isDrop = o.isDrop or false,
+        enabled = false,
+        name = o.isDrop and false or true,
+        box = o.isDrop and false or true,
+        distance = false,
+        icon = o.isDrop and true or false,
+    }
+end
+
+-- order matters: kit objects are checked before players / entities
+local types = {
+    typeConfig({ key = "bee", title = "Bee", color = Color3.fromRGB(255, 200, 0), image = "bee.dat",
+        validate = function(obj) return obj.Name == "Bee" and obj:IsA("Model") end,
+        target = function(obj) return obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Part") or obj:FindFirstChildWhichIsA("BasePart") end }),
+
+    typeConfig({ key = "metal", title = "Metal", color = Color3.fromRGB(180, 180, 180), image = "iron.dat",
+        validate = function(obj) return obj:FindFirstChild("hidden-metal-prompt") ~= nil and obj:FindFirstChild("Part") ~= nil end,
+        target = function(obj) return obj.Part end }),
+
+    typeConfig({ key = "elder", title = "Elder", color = Color3.fromRGB(180, 180, 180),
+        validate = function(obj) return obj.Name == "TreeOrb" and obj:IsA("Model") and obj:FindFirstChild("Spirit") ~= nil end,
+        target = function(obj) return obj.Spirit end }),
+
+    typeConfig({ key = "star", title = "Star", color = Color3.fromRGB(180, 180, 180),
+        validate = function(obj) return obj:FindFirstChild("stars_ProximityPrompt") ~= nil and obj:FindFirstChild("RootPart") ~= nil end,
+        target = function(obj) return obj.RootPart end,
+        label = function(obj) return obj.Name end,
+        image = function(obj)
+            if obj.Name == "CritStar" then return "crit_star.dat" end
+            if obj.Name == "VitalityStar" then return "vitality_star.dat" end
+        end }),
+
+    typeConfig({ key = "deathadder", title = "DeathAdder", color = Color3.fromRGB(186, 85, 211),
+        validate = function(obj) return obj.Name == "AlchemyCrystal" and obj:FindFirstChild("2") ~= nil end,
+        target = function(obj) return obj["2"] end }),
+
+    typeConfig({ key = "iron", title = "Iron", color = Color3.fromRGB(200, 200, 200), image = "iron.dat", isDrop = true,
+        validate = isDrop("iron"), target = function(obj) return obj end }),
+
+    typeConfig({ key = "diamond", title = "Diamond", color = Color3.fromRGB(0, 191, 255), image = "diamond.dat", isDrop = true,
+        validate = isDrop("diamond"), target = function(obj) return obj end }),
+
+    typeConfig({ key = "emerald", title = "Emerald", color = Color3.fromRGB(0, 230, 115), image = "emerald.dat", isDrop = true,
+        validate = isDrop("emerald"), target = function(obj) return obj end }),
+
+    typeConfig({ key = "player", title = "Player", color = Color3.fromRGB(255, 255, 255),
+        validate = function(obj)
+            if not isCharacter(obj) then return false end
+            if obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name then return false end
+            return Players:FindFirstChild(obj.Name) ~= nil
+        end,
+        target = function(obj) return obj.HumanoidRootPart end,
+        label = function(obj) return obj.Name end }),
+
+    typeConfig({ key = "bed", title = "Bed", color = Color3.fromRGB(255, 0, 120),
+        validate = function(obj)
+            return (obj:IsA("MeshPart") and string.lower(obj.Name) == "bed") or (obj:IsA("Model") and obj.Name == "bed")
+        end,
+        target = function(obj)
+            if obj:IsA("Model") then
+                return obj:FindFirstChildWhichIsA("BasePart") or obj.PrimaryPart
+            end
+            return obj
+        end }),
+
+    typeConfig({ key = "entity", title = "Entity", color = Color3.fromRGB(255, 100, 100),
+        validate = function(obj)
+            if not isCharacter(obj) then return false end
+            if obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name then return false end
+            return Players:FindFirstChild(obj.Name) == nil
+        end,
+        target = function(obj) return obj.HumanoidRootPart end,
+        label = function(obj) return obj.Name end }),
 }
 
-local configPath = "rise/configs/" .. tostring(game.PlaceId) .. ".json"
+local opts = {
+    distance = 500,
+    iconSize = 50,
+    amount = false,
+    showKit = false,
+    showEquipped = false,
+}
+
+-- // CONFIG
+
+local configPath = "rise/configs/bw_" .. tostring(game.PlaceId) .. ".json"
+
+local function colorToTable(c) return { r = c.R, g = c.G, b = c.B } end
+
+local function colorFromTable(t)
+    if type(t) ~= "table" then return nil end
+    local r, g, b = tonumber(t.r), tonumber(t.g), tonumber(t.b)
+    if not (r and g and b) then return nil end
+    return Color3.new(math.clamp(r, 0, 1), math.clamp(g, 0, 1), math.clamp(b, 0, 1))
+end
 
 local function saveConfig()
     pcall(function()
-        writefile(configPath, HttpService:JSONEncode(settings))
+        local saved = {}
+        for _, t in ipairs(types) do
+            saved[t.key] = {
+                enabled = t.enabled, name = t.name, box = t.box, distance = t.distance, icon = t.icon,
+                color = colorToTable(t.color),
+            }
+        end
+        writefile(configPath, HttpService:JSONEncode({ options = opts, types = saved }))
     end)
 end
 
 local function loadConfig()
     pcall(function()
-        if isfile(configPath) then
-            local content = readfile(configPath)
-            if content and #content > 0 then
-                local parsed = HttpService:JSONDecode(content)
-                if type(parsed) == "table" then
-                    for key, val in pairs(parsed) do
-                        if settings[key] ~= nil then
-                            settings[key] = val
-                        end
+        if not isfile(configPath) then return end
+        local content = readfile(configPath)
+        if type(content) ~= "string" or #content == 0 then return end
+
+        local parsed = HttpService:JSONDecode(content)
+        if type(parsed) ~= "table" then return end
+
+        local o = parsed.options
+        if type(o) == "table" then
+            if type(o.distance) == "number" then opts.distance = o.distance end
+            if type(o.iconSize) == "number" then opts.iconSize = o.iconSize end
+            if type(o.amount) == "boolean" then opts.amount = o.amount end
+            if type(o.showKit) == "boolean" then opts.showKit = o.showKit end
+            if type(o.showEquipped) == "boolean" then opts.showEquipped = o.showEquipped end
+        end
+
+        if type(parsed.types) == "table" then
+            for _, t in ipairs(types) do
+                local s = parsed.types[t.key]
+                if type(s) == "table" then
+                    for _, k in ipairs({ "enabled", "name", "box", "distance", "icon" }) do
+                        if type(s[k]) == "boolean" then t[k] = s[k] end
                     end
+                    local c = colorFromTable(s.color)
+                    if c then t.color = c end
                 end
             end
         end
@@ -92,69 +197,59 @@ local function loadConfig()
 end
 
 loadConfig()
-settings.Instant = false
 
-Lib:SetTitle("Rise")
-Lib:SetSubtitle("Bedwars")
-Lib:SetOpen(true)
+-- // HELPERS
 
-local utilTab = Lib:AddTab({ Title = "Utility" })
-local gameEsp = utilTab:AddIsland({ Title = "Game ESP" })
-local kitEsp = utilTab:AddIsland({ Title = "Kit ESP" })
-local itemEsp = utilTab:AddIsland({ Title = "Items ESP" })
-local espOptions = utilTab:AddIsland({ Title = "Options" })
+local images = _G.bw_images or {}
+_G.bw_images = images
 
-local autoIsland = utilTab:AddIsland({ Title = "Automation" })
-local autoKitCategory = autoIsland
-local autoVoidDropCategory = autoIsland
-local autoFishingCategory = autoIsland
-
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local LocalPlayer = Players.LocalPlayer
-local Camera = Workspace.CurrentCamera
-
-local NetManaged = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged")
-local SwordHitEvent = NetManaged:WaitForChild("SwordHit")
-local CollectEvent = NetManaged:WaitForChild("CollectCollectableEntity")
-local PickUpBeeEvent = NetManaged:WaitForChild("PickUpBee")
-local DropItemRemote = NetManaged:WaitForChild("DropItem")
-local Inventories = ReplicatedStorage:WaitForChild("Inventories")
-
-local trackedObjects = {}
-local Attacking = false
-local armC0 = nil
-local AnimTween = nil
-local AnimDelay = tick()
-
-local swordList = {
-    "wood_sword", "stone_sword", "iron_sword", "diamond_sword", "og_diamond_sword", "ice_sword", "emerald_sword", "og_emerald_sword", "void_sword", "glitch_wood_sword", "glitch_void_sword", 
-    "wood_dao", "stone_dao", "iron_dao", "diamond_dao", "emerald_dao", 
-    "wood_dagger", "stone_dagger", "iron_dagger", "diamond_dagger", "mythic_dagger", 
-    "wood_scythe", "stone_scythe", "iron_scythe", "diamond_scythe", "mythic_scythe", "scythe", "reaper_scythe", "sky_scythe", 
-    "wood_gauntlets", "stone_gauntlets", "iron_gauntlets", "diamond_gauntlets", "mythic_gauntlets_plain", "mythic_gauntlets", 
-    "rageblade", "double_edge_sword", "spirit_dagger", "spirit_dagger_left", "pirate_sword_fp", "cutlass_ghost", "big_wood_sword", "heavenly_sword", "infernal_saber", "bear_claws", "baguette", "knockback_fish", 
-    "taser", "glitch_taser", "hot_potato", "frying_pan", "juggernaut_rage_blade", "battle_axe", "mass_hammer", "twirlblade", "noctium_blade", "noctium_blade_2", "noctium_blade_3", "noctium_blade_4", 
-    "laser_sword", "frosty_hammer", "sparkler", "toy_hammer", "rainbow_axe", "wizard_stick", "hero_magical_girl_rapier", "villain_magical_girl_rapier", "hero_scissor_sword", "villain_scissor_sword", 
-    "wood_gun_blade", "stone_gun_blade", "iron_gun_blade", "diamond_gun_blade", "emerald_gun_blade", "pillow", "iron_pickaxe_sword", "diamond_pickaxe_sword", "knight_shield", "tinkers_wrench", "whisper_feather", 
-    "super_guitar", "guards_spear"
-}
-
-local function getEquippedWeaponDirect()
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    
-    for _, swordName in ipairs(swordList) do
-        local found = char:FindFirstChild(swordName)
-        if found and found:IsA("Tool") then
-            return found
-        end
+local function loadImage(name)
+    if images[name] then return images[name] end
+    local data
+    local filePath = "rise/assets/" .. name
+    if isfile(filePath) then
+        data = readfile(filePath)
+    else
+        local ok, res = pcall(function() return game:HttpGet(REPO .. "/Assets/" .. name) end)
+        if ok then data = res end
     end
-    return nil
+    if type(data) == "string" and #data > 0 then images[name] = data end
+    return images[name]
+end
+
+local function hide(info)
+    for _, d in ipairs(info.drawings) do d.Visible = false end
+end
+
+local function newText(color)
+    local t = Drawing.new("Text")
+    t.Text = "" ; t.Center = true ; t.Outline = true
+    t.Color = color ; t.Size = 16 ; t.Visible = false
+    return t
+end
+
+local function newBox(color)
+    local b = Drawing.new("Square")
+    b.Thickness = 1 ; b.Filled = false
+    b.Color = color ; b.Visible = false
+    return b
+end
+
+local function newIcon(data)
+    local img = Drawing.new("Image")
+    img.Visible = false ; img.Data = data
+    img.Size = Vector2.new(44, 44) ; img.Rounding = 4 ; img.ZIndex = 5
+
+    local bg = Drawing.new("Square")
+    bg.Visible = false ; bg.Filled = true
+    bg.Color = Color3.fromRGB(0, 0, 0) ; bg.Transparency = 0.5 ; bg.Corner = 10 ; bg.ZIndex = 4
+
+    return img, bg
+end
+
+local function getHRP()
+    local c = LocalPlayer.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
 end
 
 local function getPlayerKit(char)
@@ -175,912 +270,239 @@ local function getEquippedItem(char)
     return "None"
 end
 
-local function getInventoryItem(itemName)
-    local inventoryFolder = Inventories:FindFirstChild(LocalPlayer.Name)
-    if inventoryFolder then
-        for _, tool in ipairs(inventoryFolder:GetChildren()) do
-            if tool and tool:IsA("Tool") then
-                local toolName = string.lower(tool.Name)
-                if toolName == string.lower(itemName) or toolName:find(string.lower(itemName)) then
-                    local amount = tool:GetAttribute("Amount") or 1
-                    return {tool = tool, amount = amount}
-                end
-            end
-        end
-    end
-    return nil
-end
+local function createInfo(obj, t, part)
+    local label = type(t.label) == "function" and t.label(obj) or t.label
+    local imageName = type(t.image) == "function" and t.image(obj) or t.image
+    local data = imageName and loadImage(imageName) or nil
 
-local espConfigs = {
-    Player = {
-        validator = function(obj)
-            if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") and obj:FindFirstChild("Humanoid") then
-                if obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name then return false end
-                local plr = Players:FindFirstChild(obj.Name)
-                return plr ~= nil and plr ~= LocalPlayer
-            end
-            return false
-        end,
-        getTarget = function(obj) return obj:FindFirstChild("HumanoidRootPart") end,
-        text = function(obj) return obj.Name end,
-        color = Color3.fromRGB(255, 255, 255)
-    },
-    Entity = {
-        validator = function(obj)
-            if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") and obj:FindFirstChild("Humanoid") then
-                if obj == LocalPlayer.Character or obj.Name == LocalPlayer.Name then return false end
-                return Players:FindFirstChild(obj.Name) == nil
-            end
-            return false
-        end,
-        getTarget = function(obj) return obj:FindFirstChild("HumanoidRootPart") end,
-        text = function(obj) return obj.Name end,
-        color = Color3.fromRGB(255, 100, 100)
-    },
-    Bed = {
-        validator = function(obj)
-            return (obj:IsA("MeshPart") and string.lower(obj.Name) == "bed") or (obj:IsA("Model") and obj.Name == "bed")
-        end,
-        getTarget = function(obj)
-            if obj:IsA("Model") then
-                return obj:FindFirstChildWhichIsA("BasePart") or obj.PrimaryPart
-            end
-            return obj
-        end,
-        text = "Bed",
-        color = Color3.fromRGB(255, 0, 120)
-    },
-    Metal = {
-        validator = function(obj) 
-            return obj:IsA("Model") and obj:FindFirstChild("hidden-metal-prompt") and obj:FindFirstChild("Part") 
-        end,
-        getTarget = function(obj) return obj.Part end,
-        text = "Metal",
-        color = Color3.fromRGB(0, 255, 255)
-    },
-    Bee = {
-        validator = function(obj) return obj.Name == "Bee" and obj:FindFirstChild("Root") end,
-        getTarget = function(obj) return obj.Root end,
-        text = "Bee",
-        color = Color3.fromRGB(255, 255, 0)
-    },
-    Eldertree = {
-        validator = function(obj) return obj.Name == "TreeOrb" and obj:FindFirstChild("Spirit") end,
-        getTarget = function(obj) return obj.Spirit end,
-        text = "Eldertree",
-        color = Color3.fromRGB(0, 255, 0)
-    },
-    Star = {
-        validator = function(obj) 
-            return (obj.Name == "CritStar" or obj.Name == "VitalityStar") and obj:FindFirstChild("RootPart") 
-        end,
-        getTarget = function(obj) return obj.RootPart end,
-        text = function(obj) return obj.Name == "CritStar" and "Crit Star" or "Vitality Star" end,
-        color = function(obj) 
-            return obj.Name == "CritStar" and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(144, 238, 144) 
-        end
-    },
-    AlchemyCrystal = {
-        validator = function(obj)
-            return obj.Name == "AlchemyCrystal" and obj:FindFirstChild("2")
-        end,
-        getTarget = function(obj) return obj:FindFirstChild("2") end,
-        text = "Alchemy Crystal",
-        color = Color3.fromRGB(186, 85, 211)
-    },
-    iron = {
-        validator = function(obj) return obj:IsA("BasePart") and obj.Name == "iron" and obj.Parent and obj.Parent.Name == "ItemDrops" end,
-        getTarget = function(obj) return obj end,
-        text = "Iron",
-        color = Color3.fromRGB(200, 200, 200)
-    },
-    diamond = {
-        validator = function(obj) return obj:IsA("BasePart") and obj.Name == "diamond" and obj.Parent and obj.Parent.Name == "ItemDrops" end,
-        getTarget = function(obj) return obj end,
-        text = "Diamond",
-        color = Color3.fromRGB(0, 191, 255)
-    },
-    emerald = {
-        validator = function(obj) return obj:IsA("BasePart") and obj.Name == "emerald" and obj.Parent and obj.Parent.Name == "ItemDrops" end,
-        getTarget = function(obj) return obj end,
-        text = "Emerald",
-        color = Color3.fromRGB(0, 230, 115)
-    }
-}
+    local info = { type = t, obj = obj, part = part, label = label }
+    info.text = newText(t.color)
+    info.box = newBox(t.color)
+    info.drawings = { info.text, info.box }
 
-local function getUniqueIdentifier(model)
-    return model.Address or tostring(model)
-end
-
-local cachedImages = {}
-local function loadImage(fileName)
-    local cached = cachedImages[fileName]
-    if cached and #cached > 0 then
-        return cached
-    end
-
-    if type(_G) == "table" then
-        local persisted = type(_G.rise_images) == "table" and _G.rise_images[fileName] or nil
-        if type(persisted) == "string" and #persisted > 0 then
-            cachedImages[fileName] = persisted
-            return persisted
-        end
-    end
-
-    local filePath = "rise/assets/" .. fileName
-    local img = ""
-    if isfile(filePath) then
-        pcall(function()
-            img = readfile(filePath)
-        end)
-    end
-
-    if type(img) == "string" and #img > 0 then
-        cachedImages[fileName] = img
-        pcall(function()
-            local images = _G.rise_images
-            if type(images) ~= "table" then images = {} end
-            images[fileName] = img
-            _G.rise_images = images
-        end)
-    end
-
-    return cachedImages[fileName]
-end
-
-local function downloadRepoDir(repoPath, localPath, allowedExts)
-    local ok, body = pcall(function()
-        return game:HttpGet("https://api.github.com/repos/rconsoIe2/MatchaLuauVM/contents/" .. repoPath)
-    end)
-    if not ok or type(body) ~= "string" or #body == 0 then return end
-
-    local decoded
-    local ok2 = pcall(function()
-        decoded = HttpService:JSONDecode(body)
-    end)
-    if not ok2 or type(decoded) ~= "table" then return end
-
-    for _, entry in ipairs(decoded) do
-        local name = entry and entry.name
-        if type(name) == "string" and entry.download_url then
-            local ext = name:match("%.([%w]+)$")
-            if ext and allowedExts[ext:lower()] then
-                local filePath = localPath .. name
-                if not isfile(filePath) then
-                    local data = game:HttpGet(entry.download_url)
-                    if type(data) == "string" and #data > 0 then
-                        writefile(filePath, data)
-                    end
-                end
-            end
-        end
-    end
-end
-
-local function ensureRiseFiles()
-    pcall(function()
-        if not isfolder("rise") then makefolder("rise") end
-        if not isfolder("rise/assets") then makefolder("rise/assets") end
-        if not isfolder("rise/libraries") then makefolder("rise/libraries") end
-        if not isfolder("rise/scripts") then makefolder("rise/scripts") end
-
-        downloadRepoDir("Assets", "rise/assets/", { dat = true })
-        downloadRepoDir("Libraries", "rise/libraries/", { lua = true, luau = true })
-        downloadRepoDir("Scripts", "rise/scripts/", { lua = true, luau = true })
-    end)
-end
-
-if not _G.developer then
-    ensureRiseFiles()
-end
-
-local function getImageFile(espType, obj)
-    if espType == "Metal" then
-        return "iron.dat"
-    elseif espType == "Bee" then
-        return "bee.dat"
-    elseif espType == "Star" then
-        return obj.Name == "CritStar" and "crit_star.dat" or "vitality_star.dat"
-    elseif espType == "AlchemyCrystal" then
-        return "alchemy_crystal.dat"
-    elseif espType == "iron" then
-        return "iron.dat"
-    elseif espType == "diamond" then
-        return "diamond.dat"
-    elseif espType == "emerald" then
-        return "emerald.dat"
-    end
-    return nil
-end
-
-for _, fileName in ipairs({"iron.dat", "bee.dat", "vitality_star.dat", "crit_star.dat", "diamond.dat", "emerald.dat", "alchemy_crystal.dat"}) do
-    loadImage(fileName)
-end
-
-local function createESP(obj, espType, config)
-    local id = getUniqueIdentifier(obj)
-    if trackedObjects[id] then return end
-
-    local part = config.getTarget(obj)
-    if not part then return end
-
-    local finalColor = type(config.color) == "function" and config.color(obj) or config.color
-    local finalText = type(config.text) == "function" and config.text(obj) or config.text
-
-    local imageFile = getImageFile(espType, obj)
-    local isImageESP = (imageFile ~= nil)
-    local isDropItem = (espType == "iron" or espType == "diamond" or espType == "emerald")
-    local box = nil
-    local text = nil
-    local amountText = nil
-    local kitText = nil
-    local equippedText = nil
-    local img = nil
-    local bg = nil
-
-    if isImageESP then
-        local pic = cachedImages[imageFile]
-        if not pic or #pic == 0 then
-            return
-        end
-
-        img = Drawing.new("Image")
-        img.Visible = false
-        img.Data = pic
-        img.Size = Vector2.new(44, 44)
-        img.Rounding = 4
-        img.ZIndex = 5
-
-        bg = Drawing.new("Square")
-        bg.Visible = false
-        bg.Filled = true
-        bg.Color = Color3.fromRGB(0, 0, 0)
-        bg.Transparency = 0.5
-        bg.Corner = 10
-        bg.ZIndex = 4
-
-        if isDropItem then
-            amountText = Drawing.new("Text")
-            amountText.Visible = false
-            amountText.Color = Color3.fromRGB(230, 230, 230)
-            amountText.Size = 12
-            amountText.Center = true
-            amountText.Outline = true
-        end
-    else
-        box = Drawing.new("Square")
-        box.Visible = false
-        box.Color = finalColor
-        box.Thickness = 1.5
-        box.Filled = false
-
-        text = Drawing.new("Text")
-        text.Visible = false
-        text.Text = finalText
-        text.Color = Color3.fromRGB(255, 255, 255)
-        text.Size = 14
-        text.Center = true
-        text.Outline = true
-
-        amountText = Drawing.new("Text")
-        amountText.Visible = false
-        amountText.Color = Color3.fromRGB(230, 230, 230)
-        amountText.Size = 12
-        amountText.Center = true
-        amountText.Outline = true
-
-        kitText = Drawing.new("Text")
-        kitText.Visible = false
-        kitText.Color = Color3.fromRGB(255, 215, 0)
-        kitText.Size = 12
-        kitText.Center = true
-        kitText.Outline = true
-
-        equippedText = Drawing.new("Text")
-        equippedText.Visible = false
-        equippedText.Color = Color3.fromRGB(175, 238, 238)
-        equippedText.Size = 12
-        equippedText.Center = true
-        equippedText.Outline = true
-    end
-
-    trackedObjects[id] = { 
-        box = box, 
-        text = text, 
-        amountText = amountText,
-        kitText = kitText,
-        equippedText = equippedText,
-        img = img,
-        bg = bg,
-        isImage = isImageESP,
-        imageFile = imageFile,
-        imgSize = img and img.Size,
-        imageSet = false,
-        part = part, 
-        obj = obj, 
-        espType = espType 
-    }
-end
-
-local function removeESP(id)
-    local data = trackedObjects[id]
     if data then
-        if data.box then data.box:Remove() end
-        if data.text then data.text:Remove() end
-        if data.amountText then data.amountText:Remove() end
-        if data.kitText then data.kitText:Remove() end
-        if data.equippedText then data.equippedText:Remove() end
-        if data.img then data.img:Remove() end
-        if data.bg then data.bg:Remove() end
-        trackedObjects[id] = nil
-    end
-end
-
-local function scanESP()
-    local currentScanIds = {}
-
-    local workspaceChildren = Workspace:GetChildren()
-    for i = 1, #workspaceChildren do
-        local child = workspaceChildren[i]
-        for espType, config in pairs(espConfigs) do
-            if config.validator(child) then
-                createESP(child, espType, config)
-                currentScanIds[getUniqueIdentifier(child)] = true
-                break
-            end
+        local ok, img, bg = pcall(newIcon, data)
+        if ok and img then
+            info.img = img ; info.bg = bg
+            info.drawings = { info.text, info.box, img, bg }
         end
     end
 
-    local itemDropsFolder = Workspace:FindFirstChild("ItemDrops")
-    if itemDropsFolder then
-        local items = itemDropsFolder:GetChildren()
-        for i = 1, #items do
-            local item = items[i]
-            for espType, config in pairs(espConfigs) do
-                if config.validator(item) then
-                    createESP(item, espType, config)
-                    currentScanIds[getUniqueIdentifier(item)] = true
-                    break
+    tracks[obj] = info
+end
+
+-- // SCAN
+
+local function scan()
+    local valid = {}
+
+    local function check(obj)
+        for _, t in ipairs(types) do
+            if t.validate(obj) then
+                local part = t.target(obj)
+                if part then
+                    valid[obj] = true
+                    if not tracks[obj] then createInfo(obj, t, part) end
                 end
+                return
             end
         end
     end
 
-    for id, data in pairs(trackedObjects) do
-        if not currentScanIds[id] or not data.obj or not data.obj.Parent then
-            removeESP(id)
-        end
+    for _, obj in ipairs(workspace:GetChildren()) do check(obj) end
+    local drops = workspace:FindFirstChild("ItemDrops")
+    if drops then
+        for _, obj in ipairs(drops:GetChildren()) do check(obj) end
+    end
+
+    for obj, info in pairs(tracks) do
+        if not valid[obj] or not obj.Parent then removeInfo(info) ; tracks[obj] = nil end
     end
 end
 
-local function hideESP(data)
-    if data.box then data.box.Visible = false end
-    if data.text then data.text.Visible = false end
-    if data.amountText then data.amountText.Visible = false end
-    if data.kitText then data.kitText.Visible = false end
-    if data.equippedText then data.equippedText.Visible = false end
-    if data.img then data.img.Visible = false end
-    if data.bg then data.bg.Visible = false end
+-- // UPDATE
+
+local function update(info, hrp)
+    local t = info.type
+    local root = info.part
+    if not t.enabled or not root.Parent then hide(info) return end
+
+    local screen, on = WorldToScreen(root.Position)
+    local dist = (hrp.Position - root.Position).Magnitude
+    if not on or dist > opts.distance then hide(info) return end
+
+    local topY
+    if t.icon and info.img then
+        local size = opts.iconSize
+        info.img.Size = Vector2.new(size, size)
+        info.img.Position = Vector2.new(screen.X - size / 2, screen.Y - size / 2)
+        info.img.Visible = true
+        if info.bg then
+            info.bg.Size = Vector2.new(size + 10, size + 10)
+            info.bg.Position = Vector2.new(screen.X - (size + 10) / 2, screen.Y - (size + 10) / 2)
+            info.bg.Visible = true
+        end
+        topY = screen.Y - size / 2
+    else
+        local s = root.Size
+        local tl = WorldToScreen((root.CFrame * CFrame.new(-s.X / 2, s.Y / 2, 0)).Position)
+        local br = WorldToScreen((root.CFrame * CFrame.new(s.X / 2, -s.Y / 2, 0)).Position)
+        local w = math.abs(tl.X - br.X)
+        local h = math.abs(tl.Y - br.Y)
+        info.box.Position = Vector2.new(screen.X - w / 2, screen.Y - h / 2)
+        info.box.Size = Vector2.new(w, h)
+        info.box.Color = t.color
+        info.box.Visible = t.box
+        topY = screen.Y - h / 2
+    end
+
+    local lines = {}
+    if t.name then lines[#lines + 1] = info.label end
+    if t.distance then lines[#lines + 1] = math.floor(dist) .. "m" end
+    if t.isDrop and opts.amount then lines[#lines + 1] = "x" .. tostring(info.obj:GetAttribute("Amount") or 1) end
+    if t.key == "player" and opts.showKit then
+        local kit = getPlayerKit(info.obj)
+        lines[#lines + 1] = "Kit: " .. string.upper(string.sub(kit, 1, 1)) .. string.sub(kit, 2)
+    end
+    if t.key == "player" and opts.showEquipped then lines[#lines + 1] = "Holding: " .. getEquippedItem(info.obj) end
+
+    info.text.Position = Vector2.new(screen.X, topY - 16 - (#lines - 1) * 18)
+    info.text.Color = t.color
+    info.text.Text = table.concat(lines, "\n")
+    info.text.Visible = #lines > 0
 end
 
-RunService.RenderStepped:Connect(function()
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    
-    for id, data in pairs(trackedObjects) do
-        if not data.part or not data.part.Parent or not data.obj or not data.obj.Parent then
-            removeESP(id)
-            continue
-        end
+-- // UI
 
-        if data.obj == char or data.obj.Name == LocalPlayer.Name then
-            hideESP(data)
-            continue
-        end
+UI.AddTab("Bedwars", function(tab)
 
-        if not settings[data.espType] then
-            hideESP(data)
-            continue
-        end
-
-        if not root then
-            hideESP(data)
-            continue
-        end
-
-        local part = data.part
-        local ok, wp, pos, onScreen, tlX, tlY, brX, brY = pcall(function()
-            local w = part.Position
-            local s = part.Size
-            local screenPos, onScr = WorldToScreen(w)
-            if data.isImage then
-                return w, screenPos, onScr, 0, 0, 0, 0
+    local function addType(sec, t)
+        local key = "bw_" .. t.key
+        sec:Toggle(key .. "_on", t.title .. " ESP", t.enabled, function(state)
+            t.enabled = state
+            if not state then
+                for _, info in pairs(tracks) do if info.type == t then hide(info) end end
             end
-            local tl = WorldToScreen((part.CFrame * CFrame.new(-s.X/2, s.Y/2, 0)).Position)
-            local br = WorldToScreen((part.CFrame * CFrame.new(s.X/2, -s.Y/2, 0)).Position)
-            return w, screenPos, onScr, tl.X, tl.Y, br.X, br.Y
+            saveConfig()
         end)
-
-        if not ok then
-            removeESP(id)
-            continue
+        sec:ColorPicker(key .. "_col", t.color.R, t.color.G, t.color.B, 1, function(color)
+            t.color = color
+            saveConfig()
+        end)
+        if t.image then
+            sec:Toggle(key .. "_icon", t.title .. " Icon", t.icon, function(state)
+                t.icon = state
+                saveConfig()
+            end)
         end
-
-        if not onScreen or (wp - root.Position).Magnitude > settings.Distance then
-            hideESP(data)
-            continue
-        end
-
-        local width = math.abs(tlX - brX)
-        local height = math.abs(tlY - brY)
-
-        if data.isImage then
-            if not data.imageSet then
-                local pic = cachedImages[data.imageFile]
-                if pic and #pic > 0 then
-                    data.img.Data = pic
-                end
-                data.imageSet = true
-            end
-
-            local scaledPx = math.floor(44 * (settings.EspSize / 50))
-            local size = Vector2.new(scaledPx, scaledPx)
-            data.img.Size = size
-
-            data.bg.Size = Vector2.new(size.X + 10, size.Y + 10)
-            data.bg.Position = Vector2.new(pos.X - (size.X + 10) * 0.5, pos.Y - (size.Y + 10) * 0.5)
-            data.bg.Visible = true
-
-            data.img.Position = Vector2.new(pos.X - size.X * 0.5, pos.Y - size.Y * 0.5)
-            data.img.Visible = true
-
-            if settings.Amount and (data.espType == "iron" or data.espType == "diamond" or data.espType == "emerald") then
-                local amount = data.obj:GetAttribute("Amount") or 1
-                data.amountText.Text = "x" .. tostring(amount)
-                data.amountText.Position = Vector2.new(pos.X, pos.Y + size.Y * 0.5 + 12)
-                data.amountText.Visible = true
-            end
-        else
-            data.box.Size = Vector2.new(width, height)
-            data.box.Position = Vector2.new(pos.X - width/2, pos.Y - height/2)
-            data.box.Visible = true
-
-            data.text.Position = Vector2.new(pos.X, pos.Y - height/2 - 16)
-            data.text.Visible = true
-
-            local currentBottomOffset = height / 2 + 4
-
-            if settings.Amount and (data.espType == "iron" or data.espType == "diamond" or data.espType == "emerald") then
-                local amount = data.obj:GetAttribute("Amount") or 1
-                data.amountText.Text = "x" .. tostring(amount)
-                data.amountText.Position = Vector2.new(pos.X, pos.Y + currentBottomOffset)
-                data.amountText.Visible = true
-                currentBottomOffset = currentBottomOffset + 14
-            end
-
-            if settings.ShowKit and data.espType == "Player" then
-                local kitName = getPlayerKit(data.obj)
-                data.kitText.Text = "Kit: " .. string.upper(string.sub(kitName, 1, 1)) .. string.sub(kitName, 2)
-                data.kitText.Position = Vector2.new(pos.X, pos.Y + currentBottomOffset)
-                data.kitText.Visible = true
-                currentBottomOffset = currentBottomOffset + 14
-            end
-
-            if settings.ShowEquipped and data.espType == "Player" then
-                local itemName = getEquippedItem(data.obj)
-                data.equippedText.Text = "Holding: " .. itemName
-                data.equippedText.Position = Vector2.new(pos.X, pos.Y + currentBottomOffset)
-                data.equippedText.Visible = true
-            end
-        end
-    end
-end)
-
-local canRaycast = false
-pcall(function()
-    local hit = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(0, 1, 0))
-    canRaycast = true
-end)
-
-local function getAttackData()
-    local char = LocalPlayer.Character
-    local weapon = nil
-
-    if char then
-        local equippedName = getEquippedItem(char)
-        if equippedName and equippedName ~= "None" then
-            local invItem = getInventoryItem(equippedName)
-            if invItem and invItem.tool then
-                weapon = invItem.tool
-            end
-        end
+        sec:Toggle(key .. "_name", t.title .. " Name", t.name, function(state)
+            t.name = state
+            saveConfig()
+        end)
+        sec:Toggle(key .. "_box", t.title .. " Box", t.box, function(state)
+            t.box = state
+            saveConfig()
+        end)
+        sec:Toggle(key .. "_dist", t.title .. " Distance", t.distance, function(state)
+            t.distance = state
+            saveConfig()
+        end)
     end
 
-    if not weapon then
-        weapon = getEquippedWeaponDirect()
-    end
+    local byKey = {}
+    for _, t in ipairs(types) do byKey[t.key] = t end
 
-    if not weapon and char then
-        weapon = char:FindFirstChildWhichIsA("Tool")
-    end
+    local sec = tab:Section("Kit ESP", "Left")
 
-    if settings.LimitToItems and not weapon then
-        return false
-    end
+    -- // BEE
+    addType(sec, byKey.bee)
+    sec:Spacing()
 
-    return weapon
-end
+    -- // METAL
+    addType(sec, byKey.metal)
+    sec:Spacing()
 
-local function runAutoKit()
-    if settings.AutoKit then
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        
-        if root then
-            for _, data in pairs(trackedObjects) do
-                if data.part and data.part.Parent then
-                    local dist = (data.part.Position - root.Position).Magnitude
-                    if dist <= settings.AutoKitRange then
-                        if data.espType == "Metal" then
-                            local metalId = data.obj:GetAttribute("Id")
-                            if metalId then
-                                CollectEvent:FireServer({
-                                    id = metalId
-                                })
-                            end
-                        elseif data.espType == "Bee" then
-                            local beeId = data.obj:GetAttribute("BeeId")
-                            if beeId then
-                                PickUpBeeEvent:FireServer({
-                                    beeId = beeId
-                                })
-                            end
-                        elseif data.espType == "Star" then
-                            local starId = data.obj:GetAttribute("Id")
-                            if starId then
-                                CollectEvent:FireServer({
-                                    id = starId,
-                                    collectableName = data.obj.Name
-                                })
-                            end
-                        elseif data.espType == "AlchemyCrystal" then
-                            local crystalId = data.obj:GetAttribute("Id")
-                            if crystalId then
-                                CollectEvent:FireServer({
-                                    id = crystalId,
-                                    collectableName = "AlchemyCrystal"
-                                })
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
+    -- // ELDER
+    addType(sec, byKey.elder)
+    sec:Spacing()
 
-local cachedLowestPoint = -30
-local function updateLowestPoint()
-    local collections = {Workspace:FindFirstChild("Map"), Workspace:FindFirstChild("MapSpawns")}
-    local foundLowest = math.huge
-    
-    local ok = pcall(function()
-        for _, folder in ipairs(collections) do
-            if folder then
-                local descendants = folder:GetDescendants()
-                for i = 1, #descendants do
-                    local v = descendants[i]
-                    if v:IsA("BasePart") then
-                        local size = v.Size
-                        local pos = v.Position
-                        local point = (pos.Y - (size.Y / 2)) - 15 
-                        if point < foundLowest then
-                            foundLowest = point
-                        end
-                    end
-                end
-            end
-        end
+    -- // STAR
+    addType(sec, byKey.star)
+    sec:Spacing()
+
+    -- // DEATHADDER
+    addType(sec, byKey.deathadder)
+
+    sec = tab:Section("Item ESP", "Left")
+
+    -- // IRON
+    addType(sec, byKey.iron)
+    sec:Spacing()
+
+    -- // DIAMOND
+    addType(sec, byKey.diamond)
+    sec:Spacing()
+
+    -- // EMERALD
+    addType(sec, byKey.emerald)
+    sec:Spacing()
+
+    sec:Toggle("bw_amount", "Show Amount", opts.amount, function(state)
+        opts.amount = state
+        saveConfig()
     end)
 
-    if ok and foundLowest ~= math.huge and foundLowest < 100 then
-        cachedLowestPoint = foundLowest
-    else
-        cachedLowestPoint = -30 
-    end
-end
+    sec = tab:Section("Game ESP", "Left")
 
-local dropCooldownUntil = 0
-local function runAutoVoidDrop()
-    if settings.AutoVoidDrop and tick() >= dropCooldownUntil then
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        
-        if root then
-            local currentY = root.Position.Y
-            local threshold = cachedLowestPoint or -30
-
-            if currentY < threshold then
-                local balloonCount = LocalPlayer:GetAttribute("InflatedBalloons") or 0
-                local hasBalloonInInventory = getInventoryItem("balloon")
-                local hasOwlLift = root:FindFirstChild("OwlLiftForce")
-
-                if not (balloonCount > 0 or hasBalloonInInventory) and not (settings.OwlCheck and hasOwlLift) then
-                    local itemsToDrop = {"iron", "diamond", "emerald", "gold"}
-                    
-                    for _, itemName in ipairs(itemsToDrop) do
-                        local itemData = getInventoryItem(itemName)
-                        if itemData then
-                            DropItemRemote:FireServer({
-                                item = itemData.tool,
-                                amount = itemData.amount
-                            })
-                        end
-                    end
-
-                    dropCooldownUntil = tick() + 2
-                end
-            end
-        end
-    end
-end
-
-local HttpService = game:GetService("HttpService")
-
-local OFF_POS = 0x10C
-
-local verOk, ver = pcall(getrbxversion)
-if verOk and ver and ver ~= "" then
-    local bodyOk, body = pcall(httpget, "https://offsets.imtheo.lol/" .. tostring(ver) .. "/offsetshex.json")
-    if bodyOk and body ~= "" then
-        local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
-        if ok and data and data.Offsets then
-            for cat, fields in pairs(data.Offsets) do
-                for k, v in pairs(fields) do
-                    local n = tonumber(v)
-                    if n and cat .. "." .. k == "GuiBase2D.AbsolutePosition" then
-                        OFF_POS = n
-                    end
-                end
-            end
-        end
-    end
-end
-
-local function mread(kind, addr)
-    local success, value = pcall(memory_read, kind, addr)
-    return success and value or nil
-end
-
-local function mwrite(kind, addr, value)
-    return pcall(memory_write, kind, addr, value)
-end
-
-local function findDescendant(parent, targetName)
-    for _, child in ipairs(parent:GetDescendants()) do
-        if child.Name == targetName then
-            return child
-        end
-    end
-    return nil
-end
-
-local function findMinigameApp()
-    local gui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not gui then return nil end
-    local actionBarScreen = gui:FindFirstChild("ActionBarScreenGui")
-    if not actionBarScreen then return nil end
-    local actionBar = actionBarScreen:FindFirstChild("ActionBar")
-    if not actionBar then return nil end
-    return actionBar:FindFirstChild("FishingMinigameApp")
-end
-
-local lastInstantApp = nil
-local fisherGcCache = nil
-local fisherGcApplied = false
-local fisherGcOrig = nil
-
-local FISHER_GC_KEYS = { "fillAmount", "drainAmount" }
-local FISHER_GC_VALUES = {
-    fillAmount = 100,
-    drainAmount = 0
-}
-
-local function applyFisherGc()
-    if not (getgc and applygc) then return end
-    if fisherGcApplied then return end
-    if not fisherGcCache then
-        fisherGcCache = getgc(FISHER_GC_KEYS)
-    end
-    if fisherGcCache and #fisherGcCache > 0 and not fisherGcOrig then
-        local orig = {}
-        for i = 1, #fisherGcCache do
-            local obj = fisherGcCache[i]
-            if type(obj) == "table" then
-                orig[i] = {}
-                if obj.fillAmount ~= nil then orig[i].fillAmount = obj.fillAmount end
-                if obj.drainAmount ~= nil then orig[i].drainAmount = obj.drainAmount end
-            else
-                orig[i] = nil
-            end
-        end
-        fisherGcOrig = orig
-    end
-    pcall(function() applygc(fisherGcCache, FISHER_GC_VALUES) end)
-    fisherGcApplied = true
-    if Lib and Lib.Notify then
-        pcall(function() Lib:Notify({ Title = "Rise", Content = "memory autofisher applied" }) end)
-    else
-        pcall(function() notify("Rise", "memory autofisher applied") end)
-    end
-end
-
-local function restoreFisherGc()
-    if not (getgc and applygc) then
-        fisherGcApplied = false
-        return
-    end
-    if not fisherGcApplied then return end
-    if not fisherGcCache then
-        fisherGcCache = getgc(FISHER_GC_KEYS)
-    end
-    if fisherGcOrig and fisherGcCache then
-        for i = 1, #fisherGcCache do
-            local obj = fisherGcCache[i]
-            local orig = fisherGcOrig[i]
-            if type(obj) == "table" and type(orig) == "table" then
-                pcall(function()
-                    if orig.fillAmount ~= nil then obj.fillAmount = orig.fillAmount else obj.fillAmount = nil end
-                    if orig.drainAmount ~= nil then obj.drainAmount = orig.drainAmount else obj.drainAmount = nil end
-                end)
-            end
-        end
-    end
-    fisherGcApplied = false
-    if Lib and Lib.Notify then
-        pcall(function() Lib:Notify({ Title = "Rise", Content = "memory autofisher restored" }) end)
-    else
-        pcall(function() notify("Rise", "memory autofisher restored") end)
-    end
-end
-
-local function runAutoFisher()
-    if not settings.Fishing then return end
-
-    local app = findMinigameApp()
-
-    if not app then
-        lastInstantApp = nil
-        return
-    end
-
-    if settings.FishingRemote then
-        if lastInstantApp ~= app then
-            lastInstantApp = app
-            local pullRemote = NetManaged:FindFirstChild("PullFishingRod")
-            if pullRemote then
-                pcall(function() pullRemote:FireServer({ success = true }) end)
-            end
-        end
-        return
-    end
-
-    local three = app:FindFirstChild("3")
-    local minigame = three and three:FindFirstChild("Minigame")
-    if not minigame then
-        minigame = app:FindFirstChild("Minigame")
-    end
-
-    local marker = minigame and minigame:FindFirstChild("Marker")
-    local fishZone = minigame and minigame:FindFirstChild("FishZone")
-
-    if not (marker and marker.Address and fishZone and fishZone.Address) then
-        marker = minigame and findDescendant(minigame, "Marker")
-        fishZone = minigame and findDescendant(minigame, "FishZone")
-    end
-
-    if marker and marker.Address and fishZone and fishZone.Address then
-        local fishX = mread("float", fishZone.Address + OFF_POS)
-        if fishX then
-            mwrite("float", marker.Address + OFF_POS, fishX - 100)
-        end
-    end
-
-    if settings.Instant and not fisherGcApplied then
-        applyFisherGc()
-    elseif not settings.Instant and fisherGcApplied then
-        restoreFisherGc()
-    end
-end
-
-autoIsland:AddToggle({ Title = "Auto Kit Enabled", Default = settings.AutoKit, Callback = function(state) settings.AutoKit = state saveConfig() end })
-autoIsland:AddSlider({ Title = "Auto Kit Range", Default = settings.AutoKitRange, Min = 5, Step = 1, Max = 20, Callback = function(value) settings.AutoKitRange = value saveConfig() end })
-autoIsland:AddToggle({ Title = "Auto Void Drop", Default = settings.AutoVoidDrop, Callback = function(state) settings.AutoVoidDrop = state saveConfig() end })
-autoIsland:AddToggle({ Title = "Owl Check", Default = settings.OwlCheck, Callback = function(state) settings.OwlCheck = state saveConfig() end })
-autoIsland:AddToggle({ Title = "Auto Fisher", Default = settings.Fishing, Callback = function(state) settings.Fishing = state saveConfig() end })
-autoIsland:AddToggle({ Title = "Fisher Instant (Memory)", Default = settings.Instant, Callback = function(state)
-    settings.Instant = state
-    saveConfig()
-    if state then
-        applyFisherGc()
-    else
-        restoreFisherGc()
-    end
-end })
-autoIsland:AddToggle({ Title = "Fisher Instant (Remote)", Default = settings.FishingRemote, Callback = function(state) settings.FishingRemote = state saveConfig() end })
-
-gameEsp:AddToggle({ Title = "Player ESP", Default = settings.Player, Callback = function(state) settings.Player = state saveConfig() end })
-gameEsp:AddToggle({ Title = "Bed ESP", Default = settings.Bed, Callback = function(state) settings.Bed = state saveConfig() end })
-gameEsp:AddToggle({ Title = "Entity ESP", Default = settings.Entity, Callback = function(state) settings.Entity = state saveConfig() end })
-gameEsp:AddToggle({ Title = "Show Kit", Default = settings.ShowKit, Callback = function(state) settings.ShowKit = state saveConfig() end })
-gameEsp:AddToggle({ Title = "Show Equipped", Default = settings.ShowEquipped, Callback = function(state) settings.ShowEquipped = state saveConfig() end })
-
-kitEsp:AddToggle({ Title = "Metal ESP", Default = settings.Metal, Callback = function(state) settings.Metal = state saveConfig() end })
-kitEsp:AddToggle({ Title = "Bee ESP", Default = settings.Bee, Callback = function(state) settings.Bee = state saveConfig() end })
-kitEsp:AddToggle({ Title = "Eldertree ESP", Default = settings.Eldertree, Callback = function(state) settings.Eldertree = state saveConfig() end })
-kitEsp:AddToggle({ Title = "Star ESP", Default = settings.Star, Callback = function(state) settings.Star = state saveConfig() end })
-kitEsp:AddToggle({ Title = "DeathAdder ESP", Default = settings.AlchemyCrystal, Callback = function(state) settings.AlchemyCrystal = state saveConfig() end })
-
-itemEsp:AddToggle({ Title = "Iron ESP", Default = settings.iron, Callback = function(state) settings.iron = state saveConfig() end })
-itemEsp:AddToggle({ Title = "Diamond ESP", Default = settings.diamond, Callback = function(state) settings.diamond = state saveConfig() end })
-itemEsp:AddToggle({ Title = "Emerald ESP", Default = settings.emerald, Callback = function(state) settings.emerald = state saveConfig() end })
-itemEsp:AddToggle({ Title = "Show Amount", Default = settings.Amount, Callback = function(state) settings.Amount = state saveConfig() end })
-
-espOptions:AddToggle({ Title = "Visible Only", Default = settings.Visible, Callback = function(state) settings.Visible = state saveConfig() end })
-espOptions:AddSlider({ Title = "Distance", Default = settings.Distance, Min = 100, Step = 1, Max = 2000, Callback = function(value) settings.Distance = value saveConfig() end })
-espOptions:AddSlider({ Title = "ESP Size", Default = settings.EspSize, Min = 0, Step = 1, Max = 100, Callback = function(value) settings.EspSize = value saveConfig() end })
-
-local nextScanTime = 0
-local nextAutoKitTime = 0
-local nextVoidDropTime = 0
-local nextLowestPointTime = 0
-
-local autofisherConnected = false
-pcall(function()
-    local RunService = game:GetService("RunService")
-    RunService.RenderStepped:Connect(runAutoFisher)
-    autofisherConnected = true
-end)
-
-if not autofisherConnected then
-    task.spawn(function()
-        while true do
-            runAutoFisher()
-            task.wait()
-        end
+    -- // PLAYER
+    addType(sec, byKey.player)
+    sec:Toggle("bw_show_kit", "Show Kit", opts.showKit, function(state)
+        opts.showKit = state
+        saveConfig()
     end)
-end
+    sec:Toggle("bw_show_equipped", "Show Equipped", opts.showEquipped, function(state)
+        opts.showEquipped = state
+        saveConfig()
+    end)
+    sec:Spacing()
 
-task.spawn(function()
-    while true do
-        local now = tick()
+    -- // BED
+    addType(sec, byKey.bed)
+    sec:Spacing()
 
-        if now >= nextScanTime then
-            nextScanTime = now + 1.0
-            scanESP()
-        end
+    -- // ENTITY
+    addType(sec, byKey.entity)
 
-        if now >= nextAutoKitTime then
-            nextAutoKitTime = now + 0.1
-            runAutoKit()
-        end
+    sec = tab:Section("Options", "Left")
 
-        if now >= nextVoidDropTime then
-            nextVoidDropTime = now + 0.2
-            runAutoVoidDrop()
-        end
+    sec:SliderInt("bw_distance", "Max Distance", 50, 2000, opts.distance, function(val)
+        opts.distance = val
+        saveConfig()
+    end)
+    sec:SliderInt("bw_icon_size", "Icon Size", 20, 100, opts.iconSize, function(val)
+        opts.iconSize = val
+        saveConfig()
+    end)
 
-        if now >= nextLowestPointTime and settings.AutoVoidDrop then
-            nextLowestPointTime = now + 10
-            updateLowestPoint()
-        end
-
-        task.wait(1 / 60)
-    end
 end)
 
-if Lib and Lib.Notify then
-    pcall(function() Lib:Notify({ Title = "Rise", Content = "Press Right-Shift to toggle the UI" }) end)
-else
-    pcall(function() notify("Rise", "Press Right-Shift to toggle the UI") end)
-end
+-- // LOOP
+
+scan()
+
+local scanTimer = 0
+_G.bw_heartbeat = RunService.Heartbeat:Connect(function(dt)
+    scanTimer = scanTimer + dt
+    if scanTimer >= 1 then
+        scanTimer = 0
+        scan()
+    end
+    if not next(tracks) then return end
+
+    local hrp = getHRP()
+    if not hrp then
+        for _, info in pairs(tracks) do hide(info) end
+        return
+    end
+    for _, info in pairs(tracks) do update(info, hrp) end
+end)
