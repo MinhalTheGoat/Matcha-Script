@@ -135,7 +135,58 @@ local opts = {
     amount = false,
     showKit = false,
     showEquipped = false,
+    bedPlates = false,
 }
+
+-- // BED PLATES
+-- rough block health values used to sort the list; blocks that store
+-- their own health attribute use that instead
+local blockHealth = {
+    wool = 20,
+    wood = 90,
+    planks = 90,
+    oak_planks = 90,
+    stone = 150,
+    ender_stone = 150,
+    brick = 300,
+    glass = 5,
+    ice = 5,
+    obsidian = 1200,
+}
+
+local function bedBlocksText(bed)
+    local params = OverlapParams.new()
+    params.MaxParts = 300
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { bed }
+
+    local ok, parts = pcall(function()
+        return workspace:GetPartBoundsInRadius(bed.Position, 14, params)
+    end)
+    if not ok or type(parts) ~= "table" then return "" end
+
+    local found = {}
+    for _, part in ipairs(parts) do
+        local name = part.Name
+        if not part:GetAttribute("NoBreak") and not found[name] then
+            local hp = part:GetAttribute("health") or part:GetAttribute("Health") or blockHealth[name]
+            if type(hp) == "number" and hp > 0 then
+                found[name] = hp
+            end
+        end
+    end
+
+    local list = {}
+    for name, hp in pairs(found) do list[#list + 1] = { name = name, hp = hp } end
+    table.sort(list, function(a, b) return a.hp > b.hp end)
+
+    local names = {}
+    for i, entry in ipairs(list) do
+        if i > 6 then break end
+        names[i] = entry.name
+    end
+    return table.concat(names, ", ")
+end
 
 -- // CONFIG
 
@@ -159,8 +210,7 @@ local function saveConfig()
                 color = colorToTable(t.color),
             }
         end
-        writefile(configPath, HttpService:JSONEncode({ options = opts, types = saved }))
-    end)
+        writefile(configPath, HttpService:JSONEncode({ options = opts, types = saved }))    end)
 end
 
 local function loadConfig()
@@ -179,6 +229,7 @@ local function loadConfig()
             if type(o.amount) == "boolean" then opts.amount = o.amount end
             if type(o.showKit) == "boolean" then opts.showKit = o.showKit end
             if type(o.showEquipped) == "boolean" then opts.showEquipped = o.showEquipped end
+            if type(o.bedPlates) == "boolean" then opts.bedPlates = o.bedPlates end
         end
 
         if type(parsed.types) == "table" then
@@ -302,8 +353,11 @@ local function scan()
             if t.validate(obj) then
                 local part = t.target(obj)
                 if part then
-                    valid[obj] = true
-                    if not tracks[obj] then createInfo(obj, t, part) end
+                valid[obj] = true
+                if not tracks[obj] then createInfo(obj, t, part) end
+                if t.key == "bed" and opts.bedPlates then
+                    tracks[obj].blocks = bedBlocksText(part)
+                end
                 end
                 return
             end
@@ -366,6 +420,9 @@ local function update(info, hrp)
         lines[#lines + 1] = "Kit: " .. string.upper(string.sub(kit, 1, 1)) .. string.sub(kit, 2)
     end
     if t.key == "player" and opts.showEquipped then lines[#lines + 1] = "Holding: " .. getEquippedItem(info.obj) end
+    if t.key == "bed" and opts.bedPlates and info.blocks and #info.blocks > 0 then
+        lines[#lines + 1] = info.blocks
+    end
 
     -- with an icon the label sits underneath it, otherwise above the box
     local textY = (t.icon and info.img) and (topY + opts.iconSize + 6) or (topY - 16 - (#lines - 1) * 18)
@@ -467,6 +524,13 @@ UI.AddTab("Bedwars", function(tab)
     end)
     sec:Toggle("bw_show_equipped", "Show Equipped", opts.showEquipped, function(state)
         opts.showEquipped = state
+        saveConfig()
+    end)
+    sec:Toggle("bw_bed_plates", "Bed Plates", opts.bedPlates, function(state)
+        opts.bedPlates = state
+        if not state then
+            for _, info in pairs(tracks) do info.blocks = nil end
+        end
         saveConfig()
     end)
     sec:Spacing()
