@@ -3,8 +3,11 @@ local HttpService = game:GetService("HttpService")
 local API_BASE = "https://api.github.com/repos/MinhalTheGoat/Matcha-Script/contents"
 
 local function httpGet(url)
+    -- cache-buster: Matcha caches HttpGet responses, and without this the
+    -- same inject keeps serving stale files from before the last push
+    local bust = url .. (url:find("?", 1, true) and "&" or "?") .. "_cb=" .. tostring(os.time()) .. tostring(math.random(1000, 9999))
     return pcall(function()
-        return game:HttpGet(url)
+        return game:HttpGet(bust)
     end)
 end
 

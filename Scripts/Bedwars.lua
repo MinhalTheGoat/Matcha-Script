@@ -4,7 +4,7 @@ if not _G.loadedFromMain then
         if _G.developer then
             mainSource = readfile("rise/main.lua")
         else
-            mainSource = game:HttpGet("https://raw.githubusercontent.com/MinhalTheGoat/Matcha-Script/refs/heads/main/main.lua")
+            mainSource = game:HttpGet("https://raw.githubusercontent.com/MinhalTheGoat/Matcha-Script/refs/heads/main/main.lua?_cb=" .. tostring(os.time()))
         end
     end)
 
