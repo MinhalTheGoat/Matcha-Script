@@ -4,7 +4,7 @@ if not _G.loadedFromMain then
         if _G.developer then
             mainSource = readfile("rise/main.lua")
         else
-            mainSource = game:HttpGet("https://raw.githubusercontent.com/MinhalTheGoat/Matcha-Script/refs/heads/main/main.lua?_cb=" .. tostring(os.time()))
+            mainSource = game:HttpGet("https://github.com/MinhalTheGoat/Matcha-Script/raw/main/main.lua")
         end
     end)
 
@@ -23,7 +23,7 @@ local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
 local LocalPlayer = Players.LocalPlayer
 
-local REPO = "https://raw.githubusercontent.com/MinhalTheGoat/Matcha-Script/main"
+local REPO = "https://github.com/MinhalTheGoat/Matcha-Script/raw/main"
 
 local function removeInfo(info)
     for _, d in ipairs(info.drawings) do d:Remove() end
@@ -158,8 +158,18 @@ local blockHealth = {
     obsidian = 1200,
 }
 
--- block parts are cached and rebuilt every other scan; Matcha lacks
--- GetPartBoundsInRadius / OverlapParams, so blocks are found by name
+-- resource ores are blocks but not defences; never list them
+local blockExclude = {
+    iron = true,
+    gold = true,
+    diamond = true,
+    emerald = true,
+    coal = true,
+}
+
+-- block parts are cached and rebuilt only while bed plates are on;
+-- Matcha lacks GetPartBoundsInRadius / OverlapParams, so blocks are
+-- found by name
 local blockPartsCache = nil
 local blockCacheScans = 0
 
@@ -167,7 +177,7 @@ local function rebuildBlockCache()
     local list = {}
     local ok = pcall(function()
         for _, d in ipairs(workspace:GetDescendants()) do
-            if d:IsA("BasePart") and not d:GetAttribute("NoBreak") then
+            if d:IsA("BasePart") and not d:GetAttribute("NoBreak") and not blockExclude[d.Name] then
                 local hp = d:GetAttribute("health") or d:GetAttribute("Health") or blockHealth[d.Name]
                 if type(hp) == "number" and hp > 0 then
                     list[#list + 1] = d
@@ -186,7 +196,7 @@ local function bedBlocksText(bed)
         if part.Parent and not part:IsDescendantOf(bed)
             and (part.Position - bed.Position).Magnitude <= 14 then
             local name = part.Name
-            if not found[name] then
+            if not blockExclude[name] and not found[name] then
                 local hp = part:GetAttribute("health") or part:GetAttribute("Health") or blockHealth[name]
                 if type(hp) == "number" and hp > 0 then
                     found[name] = hp
@@ -365,9 +375,13 @@ end
 -- // SCAN
 
 local function scan()
-    blockCacheScans = blockCacheScans + 1
-    if not blockPartsCache or blockCacheScans % 2 == 0 then
-        rebuildBlockCache()
+    -- the descendant walk is expensive; only do it while bed plates are
+    -- actually on, and only every 10 scans (~10s)
+    if opts.bedPlates then
+        blockCacheScans = blockCacheScans + 1
+        if not blockPartsCache or blockCacheScans % 10 == 0 then
+            rebuildBlockCache()
+        end
     end
 
     local valid = {}

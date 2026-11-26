@@ -144,12 +144,17 @@ local function syncDir(repoPath, localBase)
     local entries = listRepoDir(repoPath)
     if not entries then return end
 
+    -- fetch through github.com/raw instead of entry.download_url:
+    -- Matcha caches raw.githubusercontent responses, so updated files
+    -- would never come through
     for _, entry in ipairs(entries) do
-        if entry.type == "file" and entry.download_url then
+        if entry.type == "file" then
             local name = entry.name
             local ext = name and name:match("%.([%w]+)$")
             if ext and allowedExts[ext:lower()] then
-                local ok, remote = httpGet(entry.download_url)
+                local url = "https://github.com/MinhalTheGoat/Matcha-Script/raw/main/" ..
+                    (repoPath and repoPath .. "/" or "") .. name
+                local ok, remote = httpGet(url)
                 if ok and type(remote) == "string" then
                     local localPath = localBase .. name
                     local localContent = ""
