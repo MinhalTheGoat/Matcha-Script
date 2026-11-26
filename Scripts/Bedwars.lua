@@ -20,6 +20,7 @@ end
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
 local LocalPlayer = Players.LocalPlayer
 
 local REPO = "https://raw.githubusercontent.com/MinhalTheGoat/Matcha-Script/main"
@@ -110,6 +111,9 @@ local types = {
 
     typeConfig({ key = "bed", title = "Bed", color = Color3.fromRGB(255, 0, 120),
         validate = function(obj)
+            -- the game tags beds via CollectionService; fall back to the name
+            local ok, tagged = pcall(obj.IsTagged, obj, "bed")
+            if ok and tagged then return true end
             return (obj:IsA("MeshPart") and string.lower(obj.Name) == "bed") or (obj:IsA("Model") and obj.Name == "bed")
         end,
         target = function(obj)
@@ -154,12 +158,19 @@ local blockHealth = {
     obsidian = 1200,
 }
 
+local bedDebugPrinted = false
 local function bedBlocksText(bed)
     -- no OverlapParams: pure Matcha doesn't expose it, so filter manually
     local ok, parts = pcall(function()
         return workspace:GetPartBoundsInRadius(bed.Position, 14)
     end)
-    if not ok or type(parts) ~= "table" then return "" end
+    if not ok or type(parts) ~= "table" then
+        if not bedDebugPrinted then
+            bedDebugPrinted = true
+            print("[BedPlates] GetPartBoundsInRadius unavailable: " .. tostring(ok and type(parts) or parts))
+        end
+        return ""
+    end
 
     local found = {}
     for _, part in ipairs(parts) do
@@ -172,6 +183,16 @@ local function bedBlocksText(bed)
                 end
             end
         end
+    end
+
+    if not bedDebugPrinted then
+        bedDebugPrinted = true
+        local sample = {}
+        for i, part in ipairs(parts) do
+            if i > 12 then break end
+            sample[i] = part.Name
+        end
+        print("[BedPlates] parts near bed: " .. tostring(#parts) .. " sample: " .. table.concat(sample, ", "))
     end
 
     local list = {}
@@ -367,6 +388,10 @@ local function scan()
     if drops then
         for _, obj in ipairs(drops:GetChildren()) do check(obj) end
     end
+    -- beds can sit deeper in the tree; the game tags them
+    pcall(function()
+        for _, obj in ipairs(CollectionService:GetTagged("bed")) do check(obj) end
+    end)
 
     for obj, info in pairs(tracks) do
         if not valid[obj] or not obj.Parent then removeInfo(info) ; tracks[obj] = nil end
