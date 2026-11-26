@@ -158,41 +158,41 @@ local blockHealth = {
     obsidian = 1200,
 }
 
-local bedDebugPrinted = false
-local function bedBlocksText(bed)
-    -- no OverlapParams: pure Matcha doesn't expose it, so filter manually
-    local ok, parts = pcall(function()
-        return workspace:GetPartBoundsInRadius(bed.Position, 14)
-    end)
-    if not ok or type(parts) ~= "table" then
-        if not bedDebugPrinted then
-            bedDebugPrinted = true
-            print("[BedPlates] GetPartBoundsInRadius unavailable: " .. tostring(ok and type(parts) or parts))
+-- block parts are cached and rebuilt every other scan; Matcha lacks
+-- GetPartBoundsInRadius / OverlapParams, so blocks are found by name
+local blockPartsCache = nil
+local blockCacheScans = 0
+
+local function rebuildBlockCache()
+    local list = {}
+    local ok = pcall(function()
+        for _, d in ipairs(workspace:GetDescendants()) do
+            if d:IsA("BasePart") and not d:GetAttribute("NoBreak") then
+                local hp = d:GetAttribute("health") or d:GetAttribute("Health") or blockHealth[d.Name]
+                if type(hp) == "number" and hp > 0 then
+                    list[#list + 1] = d
+                end
+            end
         end
-        return ""
-    end
+    end)
+    if ok then blockPartsCache = list end
+end
+
+local function bedBlocksText(bed)
+    if not blockPartsCache then return "" end
 
     local found = {}
-    for _, part in ipairs(parts) do
-        if part:IsA("BasePart") and not part:IsDescendantOf(bed) then
+    for _, part in ipairs(blockPartsCache) do
+        if part.Parent and not part:IsDescendantOf(bed)
+            and (part.Position - bed.Position).Magnitude <= 14 then
             local name = part.Name
-            if not part:GetAttribute("NoBreak") and not found[name] then
+            if not found[name] then
                 local hp = part:GetAttribute("health") or part:GetAttribute("Health") or blockHealth[name]
                 if type(hp) == "number" and hp > 0 then
                     found[name] = hp
                 end
             end
         end
-    end
-
-    if not bedDebugPrinted then
-        bedDebugPrinted = true
-        local sample = {}
-        for i, part in ipairs(parts) do
-            if i > 12 then break end
-            sample[i] = part.Name
-        end
-        print("[BedPlates] parts near bed: " .. tostring(#parts) .. " sample: " .. table.concat(sample, ", "))
     end
 
     local list = {}
@@ -365,6 +365,11 @@ end
 -- // SCAN
 
 local function scan()
+    blockCacheScans = blockCacheScans + 1
+    if not blockPartsCache or blockCacheScans % 2 == 0 then
+        rebuildBlockCache()
+    end
+
     local valid = {}
 
     local function check(obj)
