@@ -56,10 +56,10 @@ local function typeConfig(o)
         image = o.image,
         isDrop = o.isDrop or false,
         enabled = false,
-        name = o.isDrop and false or true,
-        box = o.isDrop and false or true,
+        name = true,
+        box = true,
         distance = false,
-        icon = o.isDrop and true or false,
+        icon = false,
     }
 end
 
@@ -90,13 +90,13 @@ local types = {
         validate = function(obj) return obj.Name == "AlchemyCrystal" and obj:FindFirstChild("2") ~= nil end,
         target = function(obj) return obj["2"] end }),
 
-    typeConfig({ key = "iron", title = "Iron", color = Color3.fromRGB(200, 200, 200), image = "iron.dat", isDrop = true,
+    typeConfig({ key = "iron", title = "Iron", color = Color3.fromRGB(200, 200, 200), isDrop = true,
         validate = isDrop("iron"), target = function(obj) return obj end }),
 
-    typeConfig({ key = "diamond", title = "Diamond", color = Color3.fromRGB(0, 191, 255), image = "diamond.dat", isDrop = true,
+    typeConfig({ key = "diamond", title = "Diamond", color = Color3.fromRGB(0, 191, 255), isDrop = true,
         validate = isDrop("diamond"), target = function(obj) return obj end }),
 
-    typeConfig({ key = "emerald", title = "Emerald", color = Color3.fromRGB(0, 230, 115), image = "emerald.dat", isDrop = true,
+    typeConfig({ key = "emerald", title = "Emerald", color = Color3.fromRGB(0, 230, 115), isDrop = true,
         validate = isDrop("emerald"), target = function(obj) return obj end }),
 
     typeConfig({ key = "player", title = "Player", color = Color3.fromRGB(255, 255, 255),
@@ -186,7 +186,8 @@ local function loadConfig()
                 local s = parsed.types[t.key]
                 if type(s) == "table" then
                     for _, k in ipairs({ "enabled", "name", "box", "distance", "icon" }) do
-                        if type(s[k]) == "boolean" then t[k] = s[k] end
+                        -- older configs saved drops with the name off
+                        if type(s[k]) == "boolean" and not (t.isDrop and k == "name") then t[k] = s[k] end
                     end
                     local c = colorFromTable(s.color)
                     if c then t.color = c end
@@ -332,7 +333,7 @@ local function update(info, hrp)
     if not on or dist > opts.distance then hide(info) return end
 
     local topY
-    if (t.icon or t.isDrop) and info.img then
+    if t.icon and info.img then
         local size = opts.iconSize
         info.img.Size = Vector2.new(size, size)
         info.img.Position = Vector2.new(screen.X - size / 2, screen.Y - size / 2)
@@ -352,8 +353,7 @@ local function update(info, hrp)
         info.box.Position = Vector2.new(screen.X - w / 2, screen.Y - h / 2)
         info.box.Size = Vector2.new(w, h)
         info.box.Color = t.color
-        -- drops without a loaded icon fall back to a box
-        info.box.Visible = t.box or (t.isDrop and not info.img)
+        info.box.Visible = t.box and not t.isDrop
         topY = screen.Y - h / 2
     end
 
@@ -368,7 +368,7 @@ local function update(info, hrp)
     if t.key == "player" and opts.showEquipped then lines[#lines + 1] = "Holding: " .. getEquippedItem(info.obj) end
 
     -- with an icon the label sits underneath it, otherwise above the box
-    local textY = (t.isDrop and info.img and t.icon) and (topY + opts.iconSize + 6) or (topY - 16 - (#lines - 1) * 18)
+    local textY = (t.icon and info.img) and (topY + opts.iconSize + 6) or (topY - 16 - (#lines - 1) * 18)
     info.text.Position = Vector2.new(screen.X, textY)
     info.text.Color = t.color
     info.text.Text = table.concat(lines, "\n")
