@@ -332,7 +332,7 @@ local function update(info, hrp)
     if not on or dist > opts.distance then hide(info) return end
 
     local topY
-    if t.icon and info.img then
+    if (t.icon or t.isDrop) and info.img then
         local size = opts.iconSize
         info.img.Size = Vector2.new(size, size)
         info.img.Position = Vector2.new(screen.X - size / 2, screen.Y - size / 2)
@@ -352,7 +352,8 @@ local function update(info, hrp)
         info.box.Position = Vector2.new(screen.X - w / 2, screen.Y - h / 2)
         info.box.Size = Vector2.new(w, h)
         info.box.Color = t.color
-        info.box.Visible = t.box
+        -- drops without a loaded icon fall back to a box
+        info.box.Visible = t.box or (t.isDrop and not info.img)
         topY = screen.Y - h / 2
     end
 
@@ -389,7 +390,8 @@ UI.AddTab("Bedwars", function(tab)
             t.color = color
             saveConfig()
         end)
-        if t.image then
+        -- item drops are always icons, so they get no icon / box toggles
+        if t.image and not t.isDrop then
             sec:Toggle(key .. "_icon", t.title .. " Icon", t.icon, function(state)
                 t.icon = state
                 saveConfig()
@@ -399,10 +401,12 @@ UI.AddTab("Bedwars", function(tab)
             t.name = state
             saveConfig()
         end)
-        sec:Toggle(key .. "_box", t.title .. " Box", t.box, function(state)
-            t.box = state
-            saveConfig()
-        end)
+        if not t.isDrop then
+            sec:Toggle(key .. "_box", t.title .. " Box", t.box, function(state)
+                t.box = state
+                saveConfig()
+            end)
+        end
         sec:Toggle(key .. "_dist", t.title .. " Distance", t.distance, function(state)
             t.distance = state
             saveConfig()
