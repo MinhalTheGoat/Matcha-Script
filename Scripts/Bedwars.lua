@@ -556,7 +556,9 @@ end)
 scan()
 
 local scanTimer = 0
-_G.bw_heartbeat = RunService.Heartbeat:Connect(function(dt)
+-- RenderStepped runs right before each frame is drawn, so labels stay
+-- locked to their objects instead of lagging one frame behind the camera
+_G.bw_heartbeat = RunService.RenderStepped:Connect(function(dt)
     scanTimer = scanTimer + dt
     if scanTimer >= 1 then
         scanTimer = 0
