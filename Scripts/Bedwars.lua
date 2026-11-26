@@ -155,23 +155,21 @@ local blockHealth = {
 }
 
 local function bedBlocksText(bed)
-    local params = OverlapParams.new()
-    params.MaxParts = 300
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = { bed }
-
+    -- no OverlapParams: pure Matcha doesn't expose it, so filter manually
     local ok, parts = pcall(function()
-        return workspace:GetPartBoundsInRadius(bed.Position, 14, params)
+        return workspace:GetPartBoundsInRadius(bed.Position, 14)
     end)
     if not ok or type(parts) ~= "table" then return "" end
 
     local found = {}
     for _, part in ipairs(parts) do
-        local name = part.Name
-        if not part:GetAttribute("NoBreak") and not found[name] then
-            local hp = part:GetAttribute("health") or part:GetAttribute("Health") or blockHealth[name]
-            if type(hp) == "number" and hp > 0 then
-                found[name] = hp
+        if part:IsA("BasePart") and not part:IsDescendantOf(bed) then
+            local name = part.Name
+            if not part:GetAttribute("NoBreak") and not found[name] then
+                local hp = part:GetAttribute("health") or part:GetAttribute("Health") or blockHealth[name]
+                if type(hp) == "number" and hp > 0 then
+                    found[name] = hp
+                end
             end
         end
     end
