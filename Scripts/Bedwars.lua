@@ -158,7 +158,8 @@ local blockHealth = {
     obsidian = 1200,
 }
 
--- resource ores are blocks but not defences; never list them
+-- resource ores are blocks but not defences; never list them.
+-- covers iron_ore_mesh_block etc. via the "_ore" check
 local blockExclude = {
     iron = true,
     gold = true,
@@ -167,17 +168,22 @@ local blockExclude = {
     coal = true,
 }
 
+local function isOreBlock(name)
+    return blockExclude[name] or (name and name:find("_ore") ~= nil)
+end
+
 -- block parts are cached and rebuilt only while bed plates are on;
 -- Matcha lacks GetPartBoundsInRadius / OverlapParams, so blocks are
 -- found by name
 local blockPartsCache = nil
 local blockCacheScans = 0
+local scanCounter = 0
 
 local function rebuildBlockCache()
     local list = {}
     local ok = pcall(function()
         for _, d in ipairs(workspace:GetDescendants()) do
-            if d:IsA("BasePart") and not d:GetAttribute("NoBreak") and not blockExclude[d.Name] then
+            if d:IsA("BasePart") and not d:GetAttribute("NoBreak") and not isOreBlock(d.Name) then
                 local hp = d:GetAttribute("health") or d:GetAttribute("Health") or blockHealth[d.Name]
                 if type(hp) == "number" and hp > 0 then
                     list[#list + 1] = d
@@ -196,7 +202,7 @@ local function bedBlocksText(bed)
         if part.Parent and not part:IsDescendantOf(bed)
             and (part.Position - bed.Position).Magnitude <= 14 then
             local name = part.Name
-            if not blockExclude[name] and not found[name] then
+            if not isOreBlock(name) and not found[name] then
                 local hp = part:GetAttribute("health") or part:GetAttribute("Health") or blockHealth[name]
                 if type(hp) == "number" and hp > 0 then
                     found[name] = hp
@@ -375,8 +381,10 @@ end
 -- // SCAN
 
 local function scan()
+    scanCounter = scanCounter + 1
+
     -- the descendant walk is expensive; only do it while bed plates are
-    -- actually on, and only every 10 scans (~10s)
+    -- actually on, and only every 10 scans (~20s at a 2s scan interval)
     if opts.bedPlates then
         blockCacheScans = blockCacheScans + 1
         if not blockPartsCache or blockCacheScans % 10 == 0 then
@@ -394,7 +402,11 @@ local function scan()
                 valid[obj] = true
                 if not tracks[obj] then createInfo(obj, t, part) end
                 if t.key == "bed" and opts.bedPlates then
-                    tracks[obj].blocks = bedBlocksText(part)
+                    -- recompute the block list every 5 scans (~10s), not every scan
+                    if not tracks[obj].blocksTick or scanCounter - tracks[obj].blocksTick >= 5 then
+                        tracks[obj].blocksTick = scanCounter
+                        tracks[obj].blocks = bedBlocksText(part)
+                    end
                 end
                 end
                 return
@@ -418,8 +430,10 @@ local function scan()
 end
 
 -- // UPDATE
+-- boxes are sized from distance and camera FOV instead of projecting two
+-- corners, cutting WorldToScreen calls per object per frame from 3 to 1
 
-local function update(info, hrp)
+local function update(info, hrp, fovFactor)
     local t = info.type
     local root = info.part
     if not t.enabled or not root.Parent then hide(info) return end
@@ -442,10 +456,9 @@ local function update(info, hrp)
         topY = screen.Y - size / 2
     else
         local s = root.Size
-        local tl = WorldToScreen((root.CFrame * CFrame.new(-s.X / 2, s.Y / 2, 0)).Position)
-        local br = WorldToScreen((root.CFrame * CFrame.new(s.X / 2, -s.Y / 2, 0)).Position)
-        local w = math.abs(tl.X - br.X)
-        local h = math.abs(tl.Y - br.Y)
+        local safeDist = math.max(dist, 0.5)
+        local w = (s.X / safeDist) * fovFactor
+        local h = (s.Y / safeDist) * fovFactor
         info.box.Position = Vector2.new(screen.X - w / 2, screen.Y - h / 2)
         info.box.Size = Vector2.new(w, h)
         info.box.Color = t.color
@@ -602,7 +615,7 @@ local scanTimer = 0
 -- locked to their objects instead of lagging one frame behind the camera
 _G.bw_heartbeat = RunService.RenderStepped:Connect(function(dt)
     scanTimer = scanTimer + dt
-    if scanTimer >= 1 then
+    if scanTimer >= 2 then
         scanTimer = 0
         scan()
     end
@@ -613,5 +626,16 @@ _G.bw_heartbeat = RunService.RenderStepped:Connect(function(dt)
         for _, info in pairs(tracks) do hide(info) end
         return
     end
-    for _, info in pairs(tracks) do update(info, hrp) end
+
+    -- FOV scale is computed once per frame, not per object
+    local camera = workspace.CurrentCamera
+    local fovFactor = 0
+    if camera then
+        local vp = camera.ViewportSize
+        if vp and vp.Y > 0 then
+            fovFactor = vp.Y / (2 * math.tan(math.rad(camera.FieldOfView) / 2))
+        end
+    end
+
+    for _, info in pairs(tracks) do update(info, hrp, fovFactor) end
 end)
